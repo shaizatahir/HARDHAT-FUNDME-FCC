@@ -1,0 +1,41 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  function getRoundData(uint80 _roundId)\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n\n  function latestRoundData()\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n}\n"
+    },
+    "contracts/FundMe.sol": {
+      "content": "// Get funds from users\n// withdraw funds\n// set a minimum funding value in USD\n\n// SPDX-License-Identifier: MIT\n//pragma\npragma solidity ^0.8.8;\n//imports\nimport \"./PriceConverter.sol\";\n// Error codes\nerror FundMe__NotOwner();\n\n// Interfaces, Libraries, Contract\n\n/**\n * @title A contract for crowd funding\n * @author Shaiza Tahir\n * @notice This contract is to demo a sample funding contract\n * @dev This contract implements price feeds as our library\n */\ncontract FundMe {\n    // Type declarations\n    using PriceConverter for uint256;\n\n    // State variables\n    uint256 public constant MINIMUM_USD = 50 * 1e18; // 1*10**18\n    // 21,415-gas constant\n    // 23,515-gas non-constant\n    address[] private s_funders;\n    mapping(address => uint256) private s_addressToAmountFunded;\n\n    address private immutable i_owner;\n    // 21,508-gas immutable\n    // 23,644-gas non-immutable\n\n    AggregatorV3Interface public s_priceFeed;\n    // Events, modifiers\n    modifier onlyOwner() {\n        //require(msg.sender == i_owner, \"Sender is not owner\");\n        if (msg.sender != i_owner) {\n            revert FundMe__NotOwner();\n        } // revert saves alot of gas\n        _;\n    }\n\n    // Funtions Order:\n    // constructor\n    // receive\n    // fallback\n    // external\n    // public\n    // internal\n    // private\n    // view / pure\n\n    // we can change chains\n    constructor(address priceFeedAddress) {\n        i_owner = msg.sender;\n        s_priceFeed = AggregatorV3Interface(priceFeedAddress);\n    }\n\n    // if data is empty\n    receive() external payable {\n        fund();\n    }\n\n    // if data is sent with a transaction, and no function specified\n    fallback() external payable {\n        fund();\n    }\n\n    /**\n     * @notice This function funds the contract\n     * @dev This implements price feeds as our library\n     */\n    function fund() public payable {\n        // want to be able to sent a minimum amount in USD\n        // 1. How do we sent ETH to this contract\n        require(\n            msg.value.getConversionRate(s_priceFeed) >= MINIMUM_USD,\n            \"Didn't sent enough\"\n        ); // 1e18 == 1 * 10 *18 == 1000000000000000000\n        // 18 decimals\n        // What is reverting?\n        // undo any actions before, and send remaining gas back\n        s_funders.push(msg.sender);\n        s_addressToAmountFunded[msg.sender] = msg.value;\n    }\n\n    function withdraw() public payable onlyOwner {\n        for (\n            uint256 funderIndex = 0;\n            funderIndex < s_funders.length;\n            funderIndex++\n        ) {\n            address funder = s_funders[funderIndex];\n            s_addressToAmountFunded[funder] = 0;\n        }\n        // reset the array\n        s_funders = new address[](0);\n        (bool callSuccess, ) = payable(msg.sender).call{\n            value: address(this).balance\n        }(\"\");\n        require(callSuccess, \"call failed\");\n    }\n\n    function cheaperWithdraw() public payable onlyOwner {\n        address[] memory funders = s_funders;\n        for (\n            uint256 funderIndex = 0;\n            funderIndex < funders.length;\n            funderIndex++\n        ) {\n            address funder = funders[funderIndex];\n            s_addressToAmountFunded[funder] = 0;\n        }\n        s_funders = new address[](0);\n        (bool success, ) = payable(msg.sender).call{\n            value: address(this).balance\n        }(\"\");\n        require(success);\n    }\n\n    // view / pure\n\n    function getOwner() public view returns (address) {\n        return i_owner;\n    }\n\n    function getFunders(uint256 index) public view returns (address) {\n        return s_funders[index];\n    }\n    function getAddressToAmountFunded(address funder) public view returns (uint256) {\n        return s_addressToAmountFunded[funder];\n    }\n    function getPriceFeed() public view returns (AggregatorV3Interface) {\n        return s_priceFeed;\n    }\n}\n\n// 5 steps to solve any coding problem\n// 1. Tinker and experiment\n// 2. check the docs\n// 3. do web search\n// 4. ask question on forum & Q&A sites\n// 5. Join and strengthen the comunity and tool\n"
+    },
+    "contracts/PriceConverter.sol": {
+      "content": "//  SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.0;\r\n\r\nimport \"@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol\";\r\n\r\n// Libraries are similar to contracts, but you can't declare any state variable and you can't send ether.\r\n// A library is embedded into the contract if all library functions are internal.\r\n\r\nlibrary PriceConverter {\r\n    function getPrice(\r\n        AggregatorV3Interface priceFeed\r\n    ) internal view returns (uint256) {\r\n        // ABI\r\n        // Address 0xD4a33860578De61DBAbDc8BFdb98FD742fA7028e\r\n        // AggregatorV3Interface priceFeed = AggregatorV3Interface(\r\n        //     0xD4a33860578De61DBAbDc8BFdb98FD742fA7028e\r\n        // );\r\n        (, int256 price, , , ) = priceFeed.latestRoundData();\r\n        return uint256(price * 1e10); // 1 * 10 == 10000000000\r\n    }\r\n\r\n\r\n    function getConversionRate(\r\n        uint256 ethAmount,\r\n        AggregatorV3Interface priceFeed\r\n    ) internal view returns (uint256) {\r\n        uint256 ethPrice = getPrice(priceFeed);\r\n        // 3000_000000000000000000 ETH / USD price\r\n        // 1_000000000000000000\r\n        uint256 ethAmountInUsd = (ethPrice * ethAmount) / 1e18; // without division it will have 36 zeros at the end\r\n        return ethAmountInUsd;\r\n    }\r\n}\r\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
